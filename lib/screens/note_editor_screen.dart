@@ -288,6 +288,7 @@ class _MicButton extends StatefulWidget {
 
 class _MicButtonState extends State<_MicButton> {
   bool _isRecording = false;
+  bool _isTranscribing = false;
   bool _isLongPress = false;
   final AudioRecorder _audioRecorder = AudioRecorder();
 
@@ -339,38 +340,27 @@ class _MicButtonState extends State<_MicButton> {
       });
 
       if (path != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Gemini API: Transcribing voice...'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
+        setState(() => _isTranscribing = true);
 
         // Use XFile for cross-platform byte reading
         final xFile = XFile(path);
         final bytes = await xFile.readAsBytes();
 
         try {
-          final transcription = await widget.geminiService.transcribeAudio(
+          final transcription = await widget.geminiService.transcribeAudioLog(
             bytes,
             mimeType: kIsWeb ? 'audio/webm' : 'audio/mp4',
           );
 
-          if (transcription != null && mounted) {
-            widget.onTranscription(transcription);
-          } else if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No speech detected.')),
-            );
-          }
+          if (mounted) widget.onTranscription(transcription);
         } catch (e) {
           if (mounted) {
             ScaffoldMessenger.of(
               context,
             ).showSnackBar(SnackBar(content: Text(e.toString())));
           }
+        } finally {
+          if (mounted) setState(() => _isTranscribing = false);
         }
       }
     } catch (e) {
@@ -379,6 +369,7 @@ class _MicButtonState extends State<_MicButton> {
         setState(() {
           _isRecording = false;
           _isLongPress = false;
+          _isTranscribing = false;
         });
         ScaffoldMessenger.of(
           context,
@@ -393,12 +384,12 @@ class _MicButtonState extends State<_MicButton> {
       onTap: () {
         if (_isRecording) {
           if (!_isLongPress) _stopRecording();
-        } else {
+        } else if (!_isTranscribing) {
           _startRecording();
         }
       },
       onLongPressStart: (_) {
-        if (!_isRecording) {
+        if (!_isRecording && !_isTranscribing) {
           _isLongPress = true;
           _startRecording();
         }
@@ -422,77 +413,109 @@ class _MicButtonState extends State<_MicButton> {
           boxShadow: _isRecording
               ? [
                   BoxShadow(
-                    color: AppColors.accent.withOpacity(0.4),
+                    color: AppColors.accent.withValues(alpha: 0.4),
                     blurRadius: 12,
                     spreadRadius: 4,
                   ),
                 ]
               : null,
         ),
-        child: const Icon(Symbols.mic, color: AppColors.accent, size: 24),
+        child: _isTranscribing
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.accent,
+                ),
+              )
+            : const Icon(Symbols.mic, color: AppColors.accent, size: 24),
       ),
     );
   }
 }
 
-class _ScanButton extends StatelessWidget {
+class _ScanButton extends StatefulWidget {
   final GeminiService geminiService;
   final ValueChanged<String> onTextScanned;
+
+  const _ScanButton({
+    required this.geminiService,
+    required this.onTextScanned,
+  });
+
+  @override
+  State<_ScanButton> createState() => _ScanButtonState();
+}
+
+class _ScanButtonState extends State<_ScanButton> {
+  bool _isProcessing = false;
   final ImagePicker _picker = ImagePicker();
 
-  _ScanButton({required this.geminiService, required this.onTextScanned});
+  Future<void> _pickAndExtract() async {
+    if (_isProcessing) return;
+
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+
+      if (image == null || !mounted) return;
+
+      setState(() => _isProcessing = true);
+
+      final bytes = await image.readAsBytes();
+      try {
+        final extractedText = await widget.geminiService.extractTextFromImage(
+          bytes,
+          mimeType: 'image/jpeg',
+        );
+
+        if (mounted) widget.onTextScanned(extractedText);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(e.toString())));
+        }
+      } finally {
+        if (mounted) setState(() => _isProcessing = false);
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () async {
-        try {
-          final XFile? image = await _picker.pickImage(
-            source: ImageSource.gallery,
-            imageQuality: 85,
-          );
-
-          if (image != null) {
-            // Show processing indicator
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Gemini API: Running OCR on image...'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
-
-            final bytes = await image.readAsBytes();
-            try {
-              final extractedText = await geminiService.analyzeImage(
-                bytes,
-                mimeType: 'image/jpeg',
-              );
-
-              if (extractedText != null) {
-                onTextScanned(extractedText);
-              }
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(e.toString())));
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('Error picking image: $e');
-        }
-      },
+      onTap: _isProcessing ? null : _pickAndExtract,
       borderRadius: BorderRadius.circular(24),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(12),
-        decoration: const BoxDecoration(
-          color: AppColors.accent,
+        decoration: BoxDecoration(
+          color: _isProcessing
+              ? AppColors.accent.withValues(alpha: 0.6)
+              : AppColors.accent,
           shape: BoxShape.circle,
         ),
-        child: const Icon(Symbols.photo_camera, color: AppColors.background, size: 24),
+        child: _isProcessing
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.background,
+                ),
+              )
+            : const Icon(
+                Symbols.photo_camera,
+                color: AppColors.background,
+                size: 24,
+              ),
       ),
     );
   }
