@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.sydmarvan.ormaflow">
     <application
         android:label="orma_flow"
         android:name="${applicationName}"

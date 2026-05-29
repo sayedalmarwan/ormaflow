@@ -1,4 +1,4 @@
-package com.example.orma_flow
+package com.sydmarvan.ormaflow
 
 import android.os.Build
 import android.os.Bundle
