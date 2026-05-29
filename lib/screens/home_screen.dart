@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/task.dart';
 import '../providers/task_provider.dart';
 import '../theme/theme.dart';
+import '../widgets/settings_bottom_sheet.dart';
 import 'note_editor_screen.dart';
 import 'trash_screen.dart';
 
@@ -74,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: AppColors.textPrimary,
             size: 24,
           ),
-          onPressed: () {},
+          onPressed: () => showSettingsSheet(context),
           tooltip: 'Settings',
         ),
       ],

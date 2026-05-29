@@ -12,6 +12,7 @@ import '../models/task.dart';
 import '../providers/task_provider.dart';
 import '../services/gemini_service.dart';
 import '../theme/theme.dart';
+import '../widgets/settings_bottom_sheet.dart';
 
 class NoteEditorScreen extends StatefulWidget {
   const NoteEditorScreen({super.key, this.task});
@@ -382,9 +383,7 @@ class _MicButtonState extends State<_MicButton> {
           }
         } catch (e) {
           if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(e.toString())));
+            showErrorSheet(context, e);
           }
         } finally {
           if (mounted) setState(() => _isTranscribing = false);
@@ -550,9 +549,7 @@ class _ScanButtonState extends State<_ScanButton> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(e.toString())));
+          showErrorSheet(context, e);
         }
       } finally {
         if (mounted) setState(() => _isProcessing = false);
@@ -594,4 +591,189 @@ class _ScanButtonState extends State<_ScanButton> {
       ),
     );
   }
+}
+
+// ──────────────────────────────────────────────
+//  Friendly Error Sheet Helper
+// ──────────────────────────────────────────────
+
+void showErrorSheet(BuildContext context, dynamic error) {
+  String title = 'AI Assistant Error';
+  String message = 'An unexpected error occurred while communicating with Gemini.';
+  IconData icon = Symbols.error;
+  Color iconColor = AppColors.error;
+  bool showSettingsBtn = false;
+
+  final errStr = error.toString().toLowerCase();
+
+  if (errStr.contains('gemini_api_key is not set') || errStr.contains('api key is missing')) {
+    title = 'API Key Missing';
+    message = 'To use the smart AI voice and image features, you need to configure a Gemini API Key.';
+    icon = Symbols.key_off;
+    iconColor = AppColors.textSecondary;
+    showSettingsBtn = true;
+  } else if (errStr.contains('quota') || errStr.contains('rate limit') || errStr.contains('429') || errStr.contains('resource_exhausted')) {
+    title = 'Quota Limit Exceeded';
+    message = 'Your Gemini API Key has run out of requests for today. Please wait for it to reset or enter a new key in Settings.';
+    icon = Symbols.clock_loader_60;
+    iconColor = AppColors.accent;
+    showSettingsBtn = true;
+  } else if (errStr.contains('invalid') || errStr.contains('api_key_invalid') || errStr.contains('not valid') || (errStr.contains('400') && errStr.contains('key'))) {
+    title = 'Invalid API Key';
+    message = 'The Gemini API Key provided is invalid or has expired. Please check and re-enter your key in Settings.';
+    icon = Symbols.lock_open;
+    iconColor = AppColors.error;
+    showSettingsBtn = true;
+  } else if (errStr.contains('socketexception') || errStr.contains('failed host lookup') || errStr.contains('network_error') || errStr.contains('connection reset')) {
+    title = 'Connection Offline';
+    message = 'Cannot reach Gemini servers. Please check your internet connection and try again.';
+    icon = Symbols.wifi_off;
+    iconColor = AppColors.textSecondary;
+  }
+
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withAlpha(178),
+    builder: (BuildContext sheetCtx) {
+      return Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header with custom icon and title
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: iconColor,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // Explanatory message
+              Text(
+                message,
+                style: GoogleFonts.inter(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Collapsible details for raw error
+              Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  title: Text(
+                    'Technical Details',
+                    style: GoogleFonts.inter(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: EdgeInsets.zero,
+                  iconColor: AppColors.textSecondary,
+                  collapsedIconColor: AppColors.textSecondary,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withAlpha(50),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.divider),
+                      ),
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          error.toString(),
+                          style: GoogleFonts.robotoMono(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(sheetCtx),
+                    child: Text(
+                      'Dismiss',
+                      style: GoogleFonts.inter(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (showSettingsBtn) ...[
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(sheetCtx);
+                        showSettingsSheet(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: AppColors.onAccent,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Text(
+                        'Open Settings',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }

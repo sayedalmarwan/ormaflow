@@ -1,6 +1,6 @@
 import 'dart:typed_data';
-
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'key_storage_service.dart';
 
 // ──────────────────────────────────────────────
 //  GeminiService
@@ -24,12 +24,22 @@ class AiResult {
 class GeminiService {
   static const _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
-  void _validateKey() {
-    if (_apiKey.isEmpty) {
-      throw const GeminiServiceException(
-        'GEMINI_API_KEY is not set. '
-        'Pass it via --dart-define=GEMINI_API_KEY=<key> when running the app.',
-      );
+  /// Tests the validity of an API key.
+  Future<void> testApiKey(String apiKey) async {
+    if (apiKey.trim().isEmpty) {
+      throw const GeminiServiceException('API Key cannot be empty.');
+    }
+    try {
+      // Use standard model for testing
+      final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: apiKey);
+      final response = await model.generateContent([
+        Content.text('Test connection. Reply with "OK".')
+      ]);
+      if (response.text == null || response.text!.isEmpty) {
+        throw const GeminiServiceException('Empty response received from Gemini.');
+      }
+    } catch (e) {
+      throw GeminiServiceException(e.toString());
     }
   }
 
@@ -206,12 +216,21 @@ class GeminiService {
   }
 
   Future<GenerateContentResponse> _generateContentWithFallback(Content content) async {
-    _validateKey();
+    final customKey = await KeyStorageService.getCustomApiKey();
+    final activeKey = customKey ?? _apiKey;
+
+    if (activeKey.isEmpty) {
+      throw const GeminiServiceException(
+        'GEMINI_API_KEY is not set. '
+        'Please set a custom API key in Settings or run the app with --dart-define=GEMINI_API_KEY=<key>.',
+      );
+    }
+
     Object? lastError;
 
     for (final modelName in _fallbackChain) {
       try {
-        final model = GenerativeModel(model: modelName, apiKey: _apiKey);
+        final model = GenerativeModel(model: modelName, apiKey: activeKey);
         return await model.generateContent([content]);
       } catch (e) {
         if (_isBusyError(e)) {
