@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/task_provider.dart';
+import 'screens/api_key_screen.dart';
 import 'screens/home_screen.dart';
+import 'services/api_key_service.dart';
 import 'theme/theme.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Force portrait-only orientation for the phone UI.
@@ -33,22 +35,28 @@ void main() {
     ),
   );
 
-  runApp(const OrmaFlowApp());
+  final apiKey = await ApiKeyService.getKey();
+  final hasApiKey = apiKey != null && apiKey.isNotEmpty;
+
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => TaskProvider(),
+      child: OrmaFlowApp(hasApiKey: hasApiKey),
+    ),
+  );
 }
 
 class OrmaFlowApp extends StatelessWidget {
-  const OrmaFlowApp({super.key});
+  final bool hasApiKey;
+  const OrmaFlowApp({super.key, required this.hasApiKey});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => TaskProvider(),
-      child: MaterialApp(
-        title: 'Ormaflow',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.dark,
-        home: const HomeScreen(),
-      ),
+    return MaterialApp(
+      title: 'Ormaflow',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.dark,
+      home: hasApiKey ? const HomeScreen() : const ApiKeyScreen(),
     );
   }
 }

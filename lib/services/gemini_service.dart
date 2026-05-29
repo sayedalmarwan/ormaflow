@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import 'key_storage_service.dart';
+import 'api_key_service.dart';
 
 // ──────────────────────────────────────────────
 //  GeminiService
@@ -216,7 +216,7 @@ class GeminiService {
   }
 
   Future<GenerateContentResponse> _generateContentWithFallback(Content content) async {
-    final customKey = await KeyStorageService.getCustomApiKey();
+    final customKey = await ApiKeyService.getKey();
     final activeKey = customKey ?? _apiKey;
 
     if (activeKey.isEmpty) {

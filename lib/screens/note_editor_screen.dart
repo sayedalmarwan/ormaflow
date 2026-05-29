@@ -12,7 +12,7 @@ import '../models/task.dart';
 import '../providers/task_provider.dart';
 import '../services/gemini_service.dart';
 import '../theme/theme.dart';
-import '../widgets/settings_bottom_sheet.dart';
+import 'api_key_screen.dart';
 
 class NoteEditorScreen extends StatefulWidget {
   const NoteEditorScreen({super.key, this.task});
@@ -749,7 +749,12 @@ void showErrorSheet(BuildContext context, dynamic error) {
                     ElevatedButton(
                       onPressed: () {
                         Navigator.pop(sheetCtx);
-                        showSettingsSheet(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ApiKeyScreen(),
+                          ),
+                        );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.accent,
