@@ -1,38 +1,48 @@
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../models/task.dart';
 
 // ──────────────────────────────────────────────
 //  TaskProvider
 //  Single source of truth for all task state.
+//  All state is persisted to Hive boxes on every mutation.
 //  Consumed via Provider.of<TaskProvider>(context)
 //  or context.watch<TaskProvider>() / context.read<TaskProvider>().
 // ──────────────────────────────────────────────
 
 class TaskProvider extends ChangeNotifier {
-  TaskProvider() {
-    _tasks = _seedTasks();
+  static const String _tasksBoxName = 'tasks';
+  static const String _trashBoxName = 'trash';
+
+  late Box<Task> _tasksBox;
+  late Box<Task> _trashBox;
+
+  /// Call after Hive boxes are opened (in main.dart).
+  void init(Box<Task> tasksBox, Box<Task> trashBox) {
+    _tasksBox = tasksBox;
+    _trashBox = trashBox;
+
+    // Seed with demo data only on first launch (empty box).
+    if (_tasksBox.isEmpty) {
+      _seedTasks();
+    }
   }
-
-  // ── Internal state ───────────────────────────
-
-  late List<Task> _tasks;
-  final List<Task> _trashTasks = [];
 
   // ── Public read-only accessors ────────────────
 
   /// All active tasks (ordered by insertion / creation time).
-  List<Task> get tasks => List.unmodifiable(_tasks);
+  List<Task> get tasks => _tasksBox.values.toList();
 
   /// All deleted tasks in the trash.
-  List<Task> get trashTasks => List.unmodifiable(_trashTasks);
+  List<Task> get trashTasks => _trashBox.values.toList();
 
   /// Only tasks that are not yet completed.
   List<Task> get pendingTasks =>
-      _tasks.where((t) => !t.isCompleted).toList();
+      tasks.where((t) => !t.isCompleted).toList();
 
   /// Only tasks that have been marked as done.
   List<Task> get completedTasks =>
-      _tasks.where((t) => t.isCompleted).toList();
+      tasks.where((t) => t.isCompleted).toList();
 
   /// Number of pending (incomplete) tasks.
   int get pendingCount => pendingTasks.length;
@@ -40,65 +50,65 @@ class TaskProvider extends ChangeNotifier {
   // ── Mutations ─────────────────────────────────
 
   /// Add a new [task] to the list.
-  void addTask(Task task) {
-    _tasks.add(task);
+  Future<void> addTask(Task task) async {
+    await _tasksBox.put(task.id, task);
     notifyListeners();
   }
 
   /// Toggle the [isCompleted] state of the task with [id].
-  void toggleTask(String id) {
-    final index = _tasks.indexWhere((t) => t.id == id);
-    if (index == -1) return;
-    _tasks[index].isCompleted = !_tasks[index].isCompleted;
+  Future<void> toggleTask(String id) async {
+    final task = _tasksBox.get(id);
+    if (task == null) return;
+    task.isCompleted = !task.isCompleted;
+    await task.save();
     notifyListeners();
   }
 
-  /// Remove the task with [id] from the list completely.
-  void deleteTask(String id) {
-    _tasks.removeWhere((t) => t.id == id);
-    _trashTasks.removeWhere((t) => t.id == id);
+  /// Permanently delete the task with [id] from both boxes.
+  Future<void> deleteTask(String id) async {
+    await _tasksBox.delete(id);
+    await _trashBox.delete(id);
     notifyListeners();
   }
 
-  /// Move task to trash
-  void moveToTrash(String id) {
-    final index = _tasks.indexWhere((t) => t.id == id);
-    if (index != -1) {
-      _trashTasks.add(_tasks[index]);
-      _tasks.removeAt(index);
-      notifyListeners();
-    }
+  /// Move task from active list to trash.
+  Future<void> moveToTrash(String id) async {
+    final task = _tasksBox.get(id);
+    if (task == null) return;
+    await _trashBox.put(id, task);
+    await _tasksBox.delete(id);
+    notifyListeners();
   }
 
-  /// Restore task from trash
-  void restoreTask(String id) {
-    final index = _trashTasks.indexWhere((t) => t.id == id);
-    if (index != -1) {
-      _tasks.add(_trashTasks[index]);
-      _trashTasks.removeAt(index);
-      notifyListeners();
-    }
+  /// Restore task from trash back to active list.
+  Future<void> restoreTask(String id) async {
+    final task = _trashBox.get(id);
+    if (task == null) return;
+    await _tasksBox.put(id, task);
+    await _trashBox.delete(id);
+    notifyListeners();
   }
 
   /// Replace all fields of an existing task (matched by id).
-  void updateTask(Task updated) {
-    final index = _tasks.indexWhere((t) => t.id == updated.id);
-    if (index == -1) return;
-    _tasks[index] = updated;
+  Future<void> updateTask(Task updated) async {
+    await _tasksBox.put(updated.id, updated);
     notifyListeners();
   }
 
-  /// Remove all completed tasks.
-  void clearCompleted() {
-    _tasks.removeWhere((t) => t.isCompleted);
+  /// Remove all completed tasks from the active list (move to trash).
+  Future<void> clearCompleted() async {
+    final completed = tasks.where((t) => t.isCompleted).toList();
+    for (final t in completed) {
+      await _trashBox.put(t.id, t);
+      await _tasksBox.delete(t.id);
+    }
     notifyListeners();
   }
 
-  // ── Seed data ─────────────────────────────────
+  // ── Seed data (first launch only) ─────────────
 
-  /// Returns the 4 placeholder tasks shown in the design screenshot.
-  static List<Task> _seedTasks() {
-    return [
+  Future<void> _seedTasks() async {
+    final seedList = [
       Task(
         id: 'task_001',
         title: 'Buy ingredients for Pizza',
@@ -124,5 +134,14 @@ class TaskProvider extends ChangeNotifier {
         type: TaskType.image,
       ),
     ];
+
+    for (final t in seedList) {
+      await _tasksBox.put(t.id, t);
+    }
+    notifyListeners();
   }
+
+  // ── Hive box names (public for main.dart) ──────
+  static String get tasksBoxName => _tasksBoxName;
+  static String get trashBoxName => _trashBoxName;
 }

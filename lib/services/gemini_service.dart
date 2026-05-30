@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'api_key_service.dart';
@@ -6,9 +7,6 @@ import 'api_key_service.dart';
 //  GeminiService
 //  Smart AI note assistant — understands whether
 //  voice input is new content or a command.
-//
-//  API key is read at compile-time via:
-//    --dart-define=GEMINI_API_KEY=<your_key>
 // ──────────────────────────────────────────────
 
 /// The action the editor should take with the returned text.
@@ -30,7 +28,6 @@ class GeminiService {
       throw const GeminiServiceException('API Key cannot be empty.');
     }
     try {
-      // Use standard model for testing
       final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: apiKey);
       final response = await model.generateContent([
         Content.text('Test connection. Reply with "OK".')
@@ -48,12 +45,8 @@ class GeminiService {
   /// Processes voice audio intelligently by determining whether the user is
   /// dictating new content or giving a command about existing content.
   ///
-  /// Returns an [AiResult] with:
-  /// - [AiAction.append] + transcribed text if the user dictated new content
-  /// - [AiAction.replace] + transformed text if the user gave a command
-  ///
-  /// [existingContent] is the current text in the editor (can be empty).
-  /// Throws [GeminiServiceException] on error or empty response.
+  /// [existingContent] is the current plain-text content of the editor.
+  /// Returns an [AiResult] with the appropriate action and plain text.
   Future<AiResult> processVoiceInput(
     List<int> audioBytes, {
     String mimeType = 'audio/mp4',
@@ -120,12 +113,7 @@ class GeminiService {
 
   // ── Smart image processing ─────────────────────
 
-  /// Processes an image intelligently — extracts text/tasks from the image
-  /// and decides whether to append it as new content or merge/replace
-  /// it with existing note content.
-  ///
-  /// Returns an [AiResult] with the appropriate action and text.
-  /// Throws [GeminiServiceException] on error or empty response.
+  /// Processes an image intelligently — extracts text/tasks from the image.
   Future<AiResult> processImageInput(
     List<int> imageBytes, {
     String mimeType = 'image/jpeg',
@@ -151,12 +139,11 @@ class GeminiService {
           ..writeln(existingContent)
           ..writeln('═══ END OF NOTE ═══')
           ..writeln()
-          ..writeln('CASE A — The image contains NEW, DIFFERENT content (e.g. a receipt, a new whiteboard, unrelated text):')
+          ..writeln('CASE A — The image contains NEW, DIFFERENT content:')
           ..writeln('→ Start with ACTION:APPEND')
           ..writeln('→ Output the extracted content cleanly formatted.')
           ..writeln()
-          ..writeln('CASE B — The image content OVERLAPS or RELATES to the existing note (e.g. an updated version')
-          ..writeln('of the same list, a photo of handwritten notes that match, or content that should be merged):')
+          ..writeln('CASE B — The image content OVERLAPS or RELATES to the existing note:')
           ..writeln('→ Start with ACTION:REPLACE')
           ..writeln('→ Output the FULL merged/updated note — combining existing content with new image data.')
           ..writeln('→ Do not duplicate items that already exist. Merge intelligently.');
@@ -193,15 +180,89 @@ class GeminiService {
     }
   }
 
-  // ── Helper with Cascading Fallback ──────────────
+  // ── Smart AI Clipboard / Delta formatting ──────
+
+  /// Takes raw plain text and formats it into a Quill Delta JSON string.
+  /// The AI uses markdown-like structure to produce rich formatting.
+  ///
+  /// Returns the Delta JSON string if successful, or the plain text as
+  /// a simple paragraph Delta on failure (never throws).
+  Future<String> formatAsDelta(String plainText) async {
+    if (plainText.trim().isEmpty) {
+      return jsonEncode({
+        'ops': [
+          {'insert': '\n'}
+        ]
+      });
+    }
+
+    try {
+      final prompt = '''
+You are converting plain text into a Quill Delta JSON object for a rich text editor.
+
+The text to format:
+"""
+$plainText
+"""
+
+Rules:
+1. Output ONLY valid JSON — a single object with an "ops" array.
+2. Each op is {"insert": "text"} for plain text or {"insert": "text", "attributes": {...}} for styled text.
+3. Lines MUST end with {"insert": "\\n"} (or {"insert": "\\n", "attributes": {"header": 1}} etc).
+4. For task-like lines starting with "[ ]": use {"insert": "\\n", "attributes": {"list": "unchecked"}}.
+5. For bullet points (lines starting with • or -): use {"insert": "\\n", "attributes": {"list": "bullet"}}.
+6. For numbered lists: use {"insert": "\\n", "attributes": {"list": "ordered"}}.
+7. Bold text: {"insert": "text", "attributes": {"bold": true}}.
+8. Use header for H1: {"insert": "\\n", "attributes": {"header": 1}}, H2: {"insert": "\\n", "attributes": {"header": 2}}.
+9. Do NOT include any explanation or markdown outside the JSON.
+10. The last op must always be {"insert": "\\n"}.
+
+Output ONLY the JSON object:''';
+
+      final response = await _generateContentWithFallback(
+        Content.text(prompt),
+      );
+
+      final raw = response.text?.trim() ?? '';
+      // Strip markdown code fences if model wrapped it
+      final cleaned = raw
+          .replaceAll(RegExp(r'^```json\s*'), '')
+          .replaceAll(RegExp(r'^```\s*'), '')
+          .replaceAll(RegExp(r'\s*```$'), '')
+          .trim();
+
+      // Validate it's actual JSON
+      jsonDecode(cleaned);
+      return cleaned;
+    } catch (_) {
+      // Fallback: wrap plain text in a simple paragraph Delta
+      return _plainTextToDelta(plainText);
+    }
+  }
+
+  // ── Helpers ────────────────────────────────────
+
+  /// Converts plain text to a minimal Quill Delta JSON string.
+  static String _plainTextToDelta(String text) {
+    final lines = text.split('\n');
+    final ops = <Map<String, dynamic>>[];
+    for (final line in lines) {
+      if (line.isNotEmpty) {
+        ops.add({'insert': line});
+      }
+      ops.add({'insert': '\n'});
+    }
+    return jsonEncode({'ops': ops});
+  }
+
+  // ── Cascading Fallback Chain ────────────────────
   //  Tries models in order from newest to oldest.
-  //  Falls back to the next tier only on 503/429/demand errors.
+  //  Falls back only on 503/429/demand errors.
 
   static const _fallbackChain = [
-    'gemini-3.5-flash',            // primary
-    'gemini-2.5-flash-preview-05-20', // tier 2
-    'gemini-2.0-flash',            // tier 3
-    'gemini-1.5-flash',            // last resort
+    'gemini-2.5-flash-preview-05-20', // primary
+    'gemini-2.0-flash',               // tier 2
+    'gemini-1.5-flash',               // last resort
   ];
 
   static bool _isBusyError(Object e) {

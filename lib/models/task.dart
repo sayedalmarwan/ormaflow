@@ -1,14 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+part 'task.g.dart';
 
 // ──────────────────────────────────────────────
 //  TaskType enum
 //  Represents how the task was originally captured.
 // ──────────────────────────────────────────────
 
+@HiveType(typeId: 1)
 enum TaskType {
+  @HiveField(0)
   manual,
+
+  @HiveField(1)
   voice,
+
+  @HiveField(2)
   image;
 
   /// Human-readable label shown in the UI.
@@ -37,35 +46,43 @@ enum TaskType {
 }
 
 // ──────────────────────────────────────────────
-//  Task model
+//  Task model (Hive-persisted)
 // ──────────────────────────────────────────────
 
-class Task {
+@HiveType(typeId: 0)
+class Task extends HiveObject {
   Task({
     required this.id,
     required this.title,
-    this.content = '',
+    this.contentJson = '',
     required this.time,
     required this.type,
     this.isCompleted = false,
   });
 
-  /// Unique identifier (UUID string or auto-incremented key).
+  /// Unique identifier (UUID string or timestamp-based key).
+  @HiveField(0)
   final String id;
 
   /// Short description / title of the task.
-  final String title;
+  @HiveField(1)
+  String title;
 
-  /// Detailed content or body of the note.
-  final String content;
+  /// Rich text content stored as Quill Delta JSON string.
+  /// Falls back gracefully to plain text if it isn't valid JSON.
+  @HiveField(2)
+  String contentJson;
 
   /// Human-readable time string, e.g. "09:00 AM".
+  @HiveField(3)
   final String time;
 
   /// How the task was captured.
-  final TaskType type;
+  @HiveField(4)
+  TaskType type;
 
   /// Whether the task has been marked done.
+  @HiveField(5)
   bool isCompleted;
 
   // ── Convenience factory ──────────────────────
@@ -74,7 +91,7 @@ class Task {
   Task copyWith({
     String? id,
     String? title,
-    String? content,
+    String? contentJson,
     String? time,
     TaskType? type,
     bool? isCompleted,
@@ -82,7 +99,7 @@ class Task {
     return Task(
       id: id ?? this.id,
       title: title ?? this.title,
-      content: content ?? this.content,
+      contentJson: contentJson ?? this.contentJson,
       time: time ?? this.time,
       type: type ?? this.type,
       isCompleted: isCompleted ?? this.isCompleted,
