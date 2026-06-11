@@ -75,7 +75,11 @@ class TaskProvider extends ChangeNotifier {
   Future<void> moveToTrash(String id) async {
     final task = _tasksBox.get(id);
     if (task == null) return;
-    await _trashBox.put(id, task);
+    // Use copyWith() to create a fresh, unattached HiveObject.
+    // Putting the same HiveObject instance into a different box while it is
+    // still registered with the source box causes Hive to silently revert the
+    // deletion on the next read.
+    await _trashBox.put(id, task.copyWith());
     await _tasksBox.delete(id);
     notifyListeners();
   }
@@ -84,7 +88,8 @@ class TaskProvider extends ChangeNotifier {
   Future<void> restoreTask(String id) async {
     final task = _trashBox.get(id);
     if (task == null) return;
-    await _tasksBox.put(id, task);
+    // Same fresh-copy pattern as moveToTrash.
+    await _tasksBox.put(id, task.copyWith());
     await _trashBox.delete(id);
     notifyListeners();
   }

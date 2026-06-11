@@ -125,8 +125,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     return jsonEncode({'ops': delta.toJson()});
   }
 
-  String _getPlainText() =>
-      _quillController.document.toPlainText().trim();
+  String _getPlainText() => _quillController.document.toPlainText().trim();
 
   void _appendPlainText(String text) {
     if (text.isEmpty) return;
@@ -231,7 +230,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                       color: AppColors.accent.withAlpha(25),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Symbols.photo_camera, color: AppColors.accent, size: 22),
+                    child: const Icon(
+                      Symbols.photo_camera,
+                      color: AppColors.accent,
+                      size: 22,
+                    ),
                   ),
                   title: Text(
                     'Take photo',
@@ -255,7 +258,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                       color: AppColors.accent.withAlpha(25),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Symbols.image, color: AppColors.accent, size: 22),
+                    child: const Icon(
+                      Symbols.image,
+                      color: AppColors.accent,
+                      size: 22,
+                    ),
                   ),
                   title: Text(
                     'Add image',
@@ -279,7 +286,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                       color: AppColors.accent.withAlpha(25),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Symbols.mic, color: AppColors.accent, size: 22),
+                    child: const Icon(
+                      Symbols.mic,
+                      color: AppColors.accent,
+                      size: 22,
+                    ),
                   ),
                   title: Text(
                     'Recording',
@@ -303,7 +314,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                       color: AppColors.accent.withAlpha(25),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Symbols.draw, color: AppColors.accent, size: 22),
+                    child: const Icon(
+                      Symbols.draw,
+                      color: AppColors.accent,
+                      size: 22,
+                    ),
                   ),
                   title: Text(
                     'Drawing',
@@ -377,9 +392,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       }
     } catch (_) {
       // Fallback to plain text append
-      _appendPlainText(
-        _extractPlainTextFromDelta(deltaJson),
-      );
+      _appendPlainText(_extractPlainTextFromDelta(deltaJson));
     }
     setState(() {});
   }
@@ -499,7 +512,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                 ),
                                 placeHolder: DefaultTextBlockStyle(
                                   GoogleFonts.inter(
-                                    color: AppColors.textSecondary.withAlpha(120),
+                                    color: AppColors.textSecondary.withAlpha(
+                                      120,
+                                    ),
                                     fontSize: 16,
                                     height: 1.6,
                                   ),
@@ -553,17 +568,24 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   // ── AppBar ────────────────────────────────────
 
   AppBar _buildAppBar() {
+    final canUndo = _quillController.hasUndo;
+    final canRedo = _quillController.hasRedo;
+
     return AppBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
       surfaceTintColor: Colors.transparent,
       automaticallyImplyLeading: false,
-      leadingWidth: 120,
+      leadingWidth: 100,
       leading: Padding(
         padding: const EdgeInsets.only(left: 12.0),
         child: TextButton.icon(
           onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Symbols.chevron_left, color: AppColors.accent, size: 28),
+          icon: const Icon(
+            Symbols.chevron_left,
+            color: AppColors.accent,
+            size: 28,
+          ),
           label: Text(
             'Back',
             style: GoogleFonts.inter(
@@ -578,10 +600,62 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           ),
         ),
       ),
+      actions: [
+        // Undo
+        IconButton(
+          icon: Icon(
+            Symbols.undo,
+            color: canUndo
+                ? AppColors.textPrimary
+                : AppColors.textSecondary.withAlpha(80),
+            size: 22,
+          ),
+          onPressed: canUndo
+              ? () {
+                  _quillController.undo();
+                  setState(() {});
+                }
+              : null,
+          tooltip: 'Undo',
+          splashRadius: 20,
+        ),
+        // Redo
+        IconButton(
+          icon: Icon(
+            Symbols.redo,
+            color: canRedo
+                ? AppColors.textPrimary
+                : AppColors.textSecondary.withAlpha(80),
+            size: 22,
+          ),
+          onPressed: canRedo
+              ? () {
+                  _quillController.redo();
+                  setState(() {});
+                }
+              : null,
+          tooltip: 'Redo',
+          splashRadius: 20,
+        ),
+        // Done — dismiss keyboard
+        Padding(
+          padding: const EdgeInsets.only(right: 12.0),
+          child: TextButton(
+            onPressed: () => FocusScope.of(context).unfocus(),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            child: Text(
+              'Done',
+              style: GoogleFonts.inter(
+                color: AppColors.accent,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
-
-  // ── Formatting Controls Bar ──────────────────
 
   // ── Formatting Controls Bar ──────────────────
 
@@ -602,7 +676,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: isActive ? AppColors.accent.withAlpha(35) : Colors.transparent,
-          border: isActive ? Border.all(color: AppColors.accent.withAlpha(80), width: 1) : null,
+          border: isActive
+              ? Border.all(color: AppColors.accent.withAlpha(80), width: 1)
+              : null,
         ),
         child: child,
       ),
@@ -663,7 +739,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               isActive: isH1,
               onTap: () {
                 _quillController.formatSelection(
-                    isH1 ? Attribute.clone(Attribute.h1, null) : Attribute.h1);
+                  isH1 ? Attribute.clone(Attribute.h1, null) : Attribute.h1,
+                );
               },
             ),
             SizedBox(width: buttonSpacing),
@@ -681,7 +758,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               isActive: isH2,
               onTap: () {
                 _quillController.formatSelection(
-                    isH2 ? Attribute.clone(Attribute.h2, null) : Attribute.h2);
+                  isH2 ? Attribute.clone(Attribute.h2, null) : Attribute.h2,
+                );
               },
             ),
             SizedBox(width: buttonSpacing),
@@ -698,16 +776,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               ),
               isActive: isAa,
               onTap: () {
-                _quillController.formatSelection(Attribute.clone(Attribute.h1, null));
-                _quillController.formatSelection(Attribute.clone(Attribute.h2, null));
+                _quillController.formatSelection(
+                  Attribute.clone(Attribute.h1, null),
+                );
+                _quillController.formatSelection(
+                  Attribute.clone(Attribute.h2, null),
+                );
               },
             ),
             SizedBox(width: dividerMargin),
-            Container(
-              width: 1,
-              height: 18,
-              color: AppColors.divider,
-            ),
+            Container(width: 1, height: 18, color: AppColors.divider),
             SizedBox(width: dividerMargin),
             _buildFormatButton(
               width: buttonWidth,
@@ -723,7 +801,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               isActive: isBold,
               onTap: () {
                 _quillController.formatSelection(
-                    isBold ? Attribute.clone(Attribute.bold, null) : Attribute.bold);
+                  isBold
+                      ? Attribute.clone(Attribute.bold, null)
+                      : Attribute.bold,
+                );
               },
             ),
             SizedBox(width: buttonSpacing),
@@ -743,7 +824,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               isActive: isItalic,
               onTap: () {
                 _quillController.formatSelection(
-                    isItalic ? Attribute.clone(Attribute.italic, null) : Attribute.italic);
+                  isItalic
+                      ? Attribute.clone(Attribute.italic, null)
+                      : Attribute.italic,
+                );
               },
             ),
             SizedBox(width: buttonSpacing),
@@ -762,7 +846,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               isActive: isUnderline,
               onTap: () {
                 _quillController.formatSelection(
-                    isUnderline ? Attribute.clone(Attribute.underline, null) : Attribute.underline);
+                  isUnderline
+                      ? Attribute.clone(Attribute.underline, null)
+                      : Attribute.underline,
+                );
               },
             ),
             SizedBox(width: buttonSpacing),
@@ -776,11 +863,21 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               ),
               isActive: false,
               onTap: () {
-                _quillController.formatSelection(Attribute.clone(Attribute.bold, null));
-                _quillController.formatSelection(Attribute.clone(Attribute.italic, null));
-                _quillController.formatSelection(Attribute.clone(Attribute.underline, null));
-                _quillController.formatSelection(Attribute.clone(Attribute.h1, null));
-                _quillController.formatSelection(Attribute.clone(Attribute.h2, null));
+                _quillController.formatSelection(
+                  Attribute.clone(Attribute.bold, null),
+                );
+                _quillController.formatSelection(
+                  Attribute.clone(Attribute.italic, null),
+                );
+                _quillController.formatSelection(
+                  Attribute.clone(Attribute.underline, null),
+                );
+                _quillController.formatSelection(
+                  Attribute.clone(Attribute.h1, null),
+                );
+                _quillController.formatSelection(
+                  Attribute.clone(Attribute.h2, null),
+                );
               },
             ),
           ],
@@ -794,25 +891,35 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   Widget _buildAccessoryBar() {
     final selectionStyle = _quillController.getSelectionStyle();
     final listAttr = selectionStyle.attributes[Attribute.unchecked.key];
-    final isChecklist = listAttr != null &&
+    final isChecklist =
+        listAttr != null &&
         (listAttr.value == 'checked' || listAttr.value == 'unchecked');
     final screenWidth = MediaQuery.of(context).size.width;
 
-    // Adapt layout parameters to screen width
-    final outerPaddingLeft = screenWidth < 360 ? 12.0 : 20.0;
-    final outerPaddingRight = screenWidth < 360 ? 12.0 : 20.0;
-    final outerPaddingBottom = screenWidth < 360 ? 12.0 : 20.0;
+    final isNarrow = screenWidth < 360;
+    final isVeryNarrow = screenWidth < 340;
 
-    final pillPaddingHorizontal = screenWidth < 360 ? 10.0 : 16.0;
-    final pillPaddingVertical = screenWidth < 360 ? 6.0 : 8.0;
+    // Outer padding — tightest on very narrow screens
+    final outerPaddingH = isVeryNarrow ? 8.0 : (isNarrow ? 12.0 : 20.0);
+    final outerPaddingBottom = isVeryNarrow ? 10.0 : (isNarrow ? 12.0 : 20.0);
 
-    final innerIconSpacing = screenWidth < 360 ? 12.0 : 20.0;
-    final rightButtonsSpacing = screenWidth < 360 ? 8.0 : 12.0;
+    // Pill inner padding
+    final pillPaddingH = isVeryNarrow ? 8.0 : (isNarrow ? 10.0 : 16.0);
+    final pillPaddingV = isVeryNarrow ? 4.0 : (isNarrow ? 6.0 : 8.0);
+
+    // Spacing between pill icons
+    final innerIconSpacing = isVeryNarrow ? 8.0 : (isNarrow ? 12.0 : 20.0);
+
+    // Spacing between right-side buttons
+    final rightButtonsSpacing = isVeryNarrow ? 6.0 : (isNarrow ? 8.0 : 12.0);
+
+    // Icon sizes
+    final pillIconSize = isVeryNarrow ? 20.0 : 24.0;
 
     return Padding(
       padding: EdgeInsets.only(
-        left: outerPaddingLeft,
-        right: outerPaddingRight,
+        left: outerPaddingH,
+        right: outerPaddingH,
         bottom: outerPaddingBottom,
         top: 4.0,
       ),
@@ -822,8 +929,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           // Left Pill Container
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: pillPaddingHorizontal,
-              vertical: pillPaddingVertical,
+              horizontal: pillPaddingH,
+              vertical: pillPaddingV,
             ),
             decoration: BoxDecoration(
               color: AppColors.surface,
@@ -831,9 +938,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               border: Border.all(color: AppColors.divider),
             ),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Symbols.add, color: AppColors.textPrimary, size: 24),
+                  icon: Icon(
+                    Symbols.add,
+                    color: AppColors.textPrimary,
+                    size: pillIconSize,
+                  ),
                   onPressed: _showAddOptionsBottomSheet,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -842,13 +954,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 SizedBox(width: innerIconSpacing),
                 IconButton(
                   icon: Icon(
-                    isChecklist ? Symbols.check_box : Symbols.check_box_outline_blank,
-                    color: isChecklist ? AppColors.accent : AppColors.textPrimary,
-                    size: 24,
+                    isChecklist
+                        ? Symbols.check_box
+                        : Symbols.check_box_outline_blank,
+                    color: isChecklist
+                        ? AppColors.accent
+                        : AppColors.textPrimary,
+                    size: pillIconSize,
                   ),
                   onPressed: () {
                     _quillController.formatSelection(
-                      isChecklist ? Attribute.clone(Attribute.unchecked, null) : Attribute.unchecked,
+                      isChecklist
+                          ? Attribute.clone(Attribute.unchecked, null)
+                          : Attribute.unchecked,
                     );
                   },
                   padding: EdgeInsets.zero,
@@ -860,9 +978,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                   icon: Text(
                     'TT',
                     style: GoogleFonts.inter(
-                      color: _showFormattingControls ? AppColors.accent : AppColors.textPrimary,
+                      color: _showFormattingControls
+                          ? AppColors.accent
+                          : AppColors.textPrimary,
                       fontWeight: FontWeight.w700,
-                      fontSize: 16,
+                      fontSize: isVeryNarrow ? 14.0 : 16.0,
                     ),
                   ),
                   onPressed: () {
@@ -879,6 +999,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           ),
           // Right circular action buttons
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               _ScanButton(
                 geminiService: _geminiService,
@@ -898,9 +1019,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     );
   }
 }
-
-
-
 
 // ──────────────────────────────────────────────
 //  Mic Button (Hold-to-Talk)
@@ -1114,18 +1232,28 @@ class _ScanButtonState extends State<_ScanButton> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Symbols.photo_camera, color: AppColors.accent),
-                title: Text('Take Photo',
-                    style: GoogleFonts.inter(color: AppColors.textPrimary)),
+                leading: const Icon(
+                  Symbols.photo_camera,
+                  color: AppColors.accent,
+                ),
+                title: Text(
+                  'Take Photo',
+                  style: GoogleFonts.inter(color: AppColors.textPrimary),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickAndProcess(ImageSource.camera);
                 },
               ),
               ListTile(
-                leading: const Icon(Symbols.photo_library, color: AppColors.accent),
-                title: Text('Choose from Gallery',
-                    style: GoogleFonts.inter(color: AppColors.textPrimary)),
+                leading: const Icon(
+                  Symbols.photo_library,
+                  color: AppColors.accent,
+                ),
+                title: Text(
+                  'Choose from Gallery',
+                  style: GoogleFonts.inter(color: AppColors.textPrimary),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickAndProcess(ImageSource.gallery);
@@ -1289,6 +1417,7 @@ class _VoiceRecordingDialogState extends State<VoiceRecordingDialog> {
       if (mounted) Navigator.pop(context);
     }
   }
+
   Future<void> _stopAndProcess() async {
     if (!_isRecording) return;
     _timer?.cancel();
@@ -1324,9 +1453,11 @@ class _VoiceRecordingDialogState extends State<VoiceRecordingDialog> {
       }
     }
   }
+
   @override
   Widget build(BuildContext context) {
-    final durationText = '${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}';
+    final durationText =
+        '${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}';
 
     return Dialog(
       backgroundColor: AppColors.surface,
@@ -1441,7 +1572,9 @@ class _DrawingCanvasDialogState extends State<DrawingCanvasDialog> {
     setState(() => _isProcessing = true);
     final navigator = Navigator.of(context);
     try {
-      final boundary = _canvasKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          _canvasKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null) return;
       final image = await boundary.toImage(pixelRatio: 2.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -1479,13 +1612,19 @@ class _DrawingCanvasDialogState extends State<DrawingCanvasDialog> {
         children: [
           // Custom Header
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 TextButton.icon(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Symbols.chevron_left, color: AppColors.accent),
+                  icon: const Icon(
+                    Symbols.chevron_left,
+                    color: AppColors.accent,
+                  ),
                   label: Text(
                     'Back',
                     style: GoogleFonts.inter(
@@ -1517,7 +1656,9 @@ class _DrawingCanvasDialogState extends State<DrawingCanvasDialog> {
                         child: Text(
                           'Done',
                           style: GoogleFonts.inter(
-                            color: _points.isEmpty ? AppColors.textSecondary : AppColors.accent,
+                            color: _points.isEmpty
+                                ? AppColors.textSecondary
+                                : AppColors.accent,
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1658,9 +1799,9 @@ void showApiKeyErrorSnackBar(BuildContext context, dynamic error) {
               label: 'Change Key',
               textColor: AppColors.accent,
               onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ApiKeyScreen()),
-                );
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const ApiKeyScreen()));
               },
             )
           : null,

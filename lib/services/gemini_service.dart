@@ -272,6 +272,8 @@ Output ONLY the JSON object:''';
         s.contains('RESOURCE_EXHAUSTED') ||
         s.contains('429') ||
         s.contains('demand') ||
+        s.contains('limit') ||
+        s.contains('quota') ||
         s.contains('not found for API version') ||
         s.contains('not supported for generateContent');
   }
