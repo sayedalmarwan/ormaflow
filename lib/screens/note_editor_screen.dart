@@ -20,6 +20,20 @@ import '../services/gemini_service.dart';
 import '../theme/theme.dart';
 import 'api_key_screen.dart';
 
+/// Linearly scales a value between [small] and [large] based on where
+/// [width] falls between [minWidth] and [maxWidth] — no hard breakpoint
+/// cliff, so there's no width at which sizing can be too big to fit.
+double _scaleByWidth(
+  double width, {
+  double minWidth = 320.0,
+  double maxWidth = 420.0,
+  required double small,
+  required double large,
+}) {
+  final t = ((width - minWidth) / (maxWidth - minWidth)).clamp(0.0, 1.0);
+  return small + (large - small) * t;
+}
+
 class NoteEditorScreen extends StatefulWidget {
   const NoteEditorScreen({super.key, this.task});
 
@@ -35,6 +49,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   late TaskProvider _taskProvider;
   final GeminiService _geminiService = GeminiService();
   final FocusNode _editorFocusNode = FocusNode();
+  final ScrollController _editorScrollController = ScrollController();
 
   bool _showFormattingControls = false;
   bool _isAiProcessing = false;
@@ -86,6 +101,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     _titleController.dispose();
     _quillController.dispose();
     _editorFocusNode.dispose();
+    _editorScrollController.dispose();
     super.dispose();
   }
 
@@ -151,6 +167,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   /// Called by mic/camera buttons after AI returns a plain text result.
   /// Converts the plain text to a Delta via Gemini, then inserts it.
   Future<void> _handleAiResult(AiResult result) async {
+    if (result.action == AiAction.none) return;
+
     final deltaJson = await _geminiService.formatAsDelta(result.text);
     if (!mounted) return;
 
@@ -470,7 +488,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                           child: QuillEditor(
                             controller: _quillController,
                             focusNode: _editorFocusNode,
-                            scrollController: ScrollController(),
+                            scrollController: _editorScrollController,
                             config: QuillEditorConfig(
                               placeholder: 'Start typing your note...',
                               padding: EdgeInsets.zero,
@@ -700,15 +718,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
     final screenWidth = MediaQuery.of(context).size.width;
 
-    // Adapt layout parameters to screen width
-    final buttonWidth = screenWidth < 360 ? 30.0 : 36.0;
-    final buttonHeight = screenWidth < 360 ? 30.0 : 36.0;
-    final buttonSpacing = screenWidth < 360 ? 1.0 : 2.0;
-    final dividerMargin = screenWidth < 360 ? 4.0 : 6.0;
-    final barPaddingHorizontal = screenWidth < 360 ? 6.0 : 10.0;
-    final barPaddingVertical = screenWidth < 360 ? 3.0 : 4.0;
-    final fontSize = screenWidth < 360 ? 12.0 : 14.0;
-    final iconSize = screenWidth < 360 ? 16.0 : 18.0;
+    // Adapt layout parameters to screen width — scaled continuously so
+    // there's no breakpoint cliff where sizing doesn't fit (see #overflow).
+    double scale(double small, double large) =>
+        _scaleByWidth(screenWidth, small: small, large: large);
+
+    final buttonWidth = scale(30.0, 36.0);
+    final buttonHeight = scale(30.0, 36.0);
+    final buttonSpacing = scale(1.0, 2.0);
+    final dividerMargin = scale(4.0, 6.0);
+    final barPaddingHorizontal = scale(6.0, 10.0);
+    final barPaddingVertical = scale(3.0, 4.0);
+    final fontSize = scale(12.0, 14.0);
+    final iconSize = scale(16.0, 18.0);
 
     return Center(
       child: Container(
@@ -896,25 +918,26 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         (listAttr.value == 'checked' || listAttr.value == 'unchecked');
     final screenWidth = MediaQuery.of(context).size.width;
 
-    final isNarrow = screenWidth < 360;
-    final isVeryNarrow = screenWidth < 340;
+    // Scaled continuously by width — no breakpoint cliff where sizing
+    // can land too big to fit (see #overflow).
+    double scale(double small, double large) =>
+        _scaleByWidth(screenWidth, small: small, large: large);
 
-    // Outer padding — tightest on very narrow screens
-    final outerPaddingH = isVeryNarrow ? 8.0 : (isNarrow ? 12.0 : 20.0);
-    final outerPaddingBottom = isVeryNarrow ? 10.0 : (isNarrow ? 12.0 : 20.0);
+    final outerPaddingH = scale(8.0, 20.0);
+    final outerPaddingBottom = scale(10.0, 20.0);
 
     // Pill inner padding
-    final pillPaddingH = isVeryNarrow ? 8.0 : (isNarrow ? 10.0 : 16.0);
-    final pillPaddingV = isVeryNarrow ? 4.0 : (isNarrow ? 6.0 : 8.0);
+    final pillPaddingH = scale(8.0, 16.0);
+    final pillPaddingV = scale(4.0, 8.0);
 
     // Spacing between pill icons
-    final innerIconSpacing = isVeryNarrow ? 8.0 : (isNarrow ? 12.0 : 20.0);
+    final innerIconSpacing = scale(8.0, 20.0);
 
     // Spacing between right-side buttons
-    final rightButtonsSpacing = isVeryNarrow ? 6.0 : (isNarrow ? 8.0 : 12.0);
+    final rightButtonsSpacing = scale(6.0, 12.0);
 
     // Icon sizes
-    final pillIconSize = isVeryNarrow ? 20.0 : 24.0;
+    final pillIconSize = scale(20.0, 24.0);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -982,7 +1005,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                           ? AppColors.accent
                           : AppColors.textPrimary,
                       fontWeight: FontWeight.w700,
-                      fontSize: isVeryNarrow ? 14.0 : 16.0,
+                      fontSize: scale(14.0, 16.0),
                     ),
                   ),
                   onPressed: () {
@@ -1136,8 +1159,8 @@ class _MicButtonState extends State<_MicButton> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final paddingVal = screenWidth < 360 ? 10.0 : 12.0;
-    final iconSize = screenWidth < 360 ? 20.0 : 24.0;
+    final paddingVal = _scaleByWidth(screenWidth, small: 10.0, large: 12.0);
+    final iconSize = _scaleByWidth(screenWidth, small: 20.0, large: 24.0);
 
     return GestureDetector(
       onTap: () {
@@ -1306,8 +1329,8 @@ class _ScanButtonState extends State<_ScanButton> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final paddingVal = screenWidth < 360 ? 10.0 : 12.0;
-    final iconSize = screenWidth < 360 ? 20.0 : 24.0;
+    final paddingVal = _scaleByWidth(screenWidth, small: 10.0, large: 12.0);
+    final iconSize = _scaleByWidth(screenWidth, small: 20.0, large: 24.0);
 
     return InkWell(
       onTap: _isProcessing ? null : _showSourcePicker,

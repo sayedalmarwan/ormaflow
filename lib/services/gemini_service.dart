@@ -11,7 +11,7 @@ import 'api_key_service.dart';
 // ──────────────────────────────────────────────
 
 /// The action the editor should take with the returned text.
-enum AiAction { append, replace }
+enum AiAction { append, replace, none }
 
 /// Holds the result of a smart AI processing call.
 class AiResult {
@@ -30,12 +30,17 @@ class GeminiService {
     }
     try {
       // Use the same primary model as the fallback chain to confirm compatibility.
-      final model = GenerativeModel(model: _fallbackChain.first, apiKey: apiKey);
+      final model = GenerativeModel(
+        model: _fallbackChain.first,
+        apiKey: apiKey,
+      );
       final response = await model.generateContent([
-        Content.text('Test connection. Reply with "OK".')
+        Content.text('Test connection. Reply with "OK".'),
       ]);
       if (response.text == null || response.text!.isEmpty) {
-        throw const GeminiServiceException('Empty response received from Gemini.');
+        throw const GeminiServiceException(
+          'Empty response received from Gemini.',
+        );
       }
     } catch (e) {
       throw GeminiServiceException(e.toString());
@@ -48,7 +53,7 @@ class GeminiService {
   // Output is printed to the debug console.
   // Set kDebugListModels = true in main.dart to activate on startup.
 
-  static const bool kDebugListModels = true; // ← flip to false when done
+  static const bool kDebugListModels = false; // ← flip to true to debug models
 
   /// Hits the v1beta ListModels REST endpoint and logs every model that
   /// supports generateContent. Prints a ready-to-paste fallback chain.
@@ -66,7 +71,9 @@ class GeminiService {
       );
       final response = await http.get(uri);
       if (response.statusCode != 200) {
-        debugPrint('[GeminiService] ListModels HTTP ${response.statusCode}: ${response.body}');
+        debugPrint(
+          '[GeminiService] ListModels HTTP ${response.statusCode}: ${response.body}',
+        );
         return;
       }
 
@@ -79,9 +86,10 @@ class GeminiService {
 
       for (final m in models) {
         final name = (m['name'] as String).replaceFirst('models/', '');
-        final methods = (m['supportedGenerationMethods'] as List<dynamic>? ?? [])
-            .map((e) => e.toString())
-            .toList();
+        final methods =
+            (m['supportedGenerationMethods'] as List<dynamic>? ?? [])
+                .map((e) => e.toString())
+                .toList();
         final supportsGenerate = methods.contains('generateContent');
         final displayName = m['displayName'] ?? name;
 
@@ -89,8 +97,10 @@ class GeminiService {
           generateContentModels.add(name);
           // Heuristic: models that support audio/vision mention it in description
           final description = (m['description'] ?? '').toString().toLowerCase();
-          if (description.contains('audio') || description.contains('vision') ||
-              description.contains('multimodal') || name.contains('flash') ||
+          if (description.contains('audio') ||
+              description.contains('vision') ||
+              description.contains('multimodal') ||
+              name.contains('flash') ||
               name.contains('pro')) {
             multimodalModels.add(name);
           }
@@ -131,24 +141,79 @@ class GeminiService {
       final hasExistingContent = existingContent.trim().isNotEmpty;
 
       final prompt = StringBuffer()
-        ..writeln('You are a smart AI note-taking assistant inside a personal notes app.')
+        ..writeln(
+          'You are a smart AI note-taking assistant inside a personal notes app.',
+        )
         ..writeln()
-        ..writeln('The user just spoke into their microphone. Your job is to figure out WHAT they want:')
+        ..writeln(
+          'The user just spoke into their microphone. Your job is to figure out WHAT they want:',
+        )
         ..writeln()
-        ..writeln('CASE 1 — DICTATION (new content to write down):')
-        ..writeln('The user is dictating tasks, notes, ideas, reminders, or any content they want captured.')
-        ..writeln('→ Transcribe it cleanly. Fix grammar. Preserve every detail and deadline mentioned.')
-        ..writeln('→ Format action items as: [ ] <task> — <deadline/timing if mentioned>')
+        ..writeln('CASE 0 — NO SPEECH (silence or background noise only):')
+        ..writeln(
+          'The recording contains no audible speech — e.g. silence, breathing, or ambient noise.',
+        )
+        ..writeln('→ Do NOT invent or guess any content.')
+        ..writeln('→ Start and end your response with exactly: ACTION:NONE')
+        ..writeln()
+        ..writeln('CASE 1 — DICTATION (new content to write down verbatim):')
+        ..writeln(
+          'The user is speaking the actual content out loud — their own tasks, notes, ideas,',
+        )
+        ..writeln(
+          'reminders, or thoughts — and wants it captured as they said it.',
+        )
+        ..writeln(
+          '→ Transcribe it cleanly. Fix grammar. Preserve every detail and deadline mentioned.',
+        )
+        ..writeln(
+          '→ Format action items as: [ ] <task> — <deadline/timing if mentioned>',
+        )
         ..writeln('→ Start your response with exactly: ACTION:APPEND')
-        ..writeln('→ Then on the next line, output ONLY the clean transcribed content.')
+        ..writeln(
+          '→ Then on the next line, output ONLY the clean transcribed content.',
+        )
         ..writeln()
-        ..writeln('CASE 2 — COMMAND (instruction to transform existing content):')
-        ..writeln('The user is giving you an instruction about the note — e.g. "organize this",')
-        ..writeln('"make a to-do list", "prioritize these", "summarize", "rewrite this",')
+        ..writeln(
+          'CASE 1B — GENERATIVE REQUEST (asking YOU to compose something new):',
+        )
+        ..writeln(
+          'The user is asking you to write/compose/draft/come up with content on a topic —',
+        )
+        ..writeln(
+          'e.g. "write a quick recipe for chicken mandhi", "write a short poem about the sea",',
+        )
+        ..writeln(
+          '"draft an email asking for a refund", "give me a packing list for a beach trip".',
+        )
+        ..writeln(
+          'The key signal: they are describing WHAT they want written, not reciting the content itself.',
+        )
+        ..writeln(
+          '→ Actually generate the requested content yourself — do not transcribe their request.',
+        )
+        ..writeln('→ Start your response with exactly: ACTION:APPEND')
+        ..writeln(
+          '→ Then on the next line, output ONLY the generated content (no preamble).',
+        )
+        ..writeln()
+        ..writeln(
+          'CASE 2 — COMMAND (instruction to transform existing content):',
+        )
+        ..writeln(
+          'The user is giving you an instruction about the note — e.g. "organize this",',
+        )
+        ..writeln(
+          '"make a to-do list", "prioritize these", "summarize", "rewrite this",',
+        )
         ..writeln('"add priorities", "sort by deadline", etc.')
-        ..writeln('→ Apply their instruction to the existing note content below.')
+        ..writeln(
+          '→ Apply their instruction to the existing note content below.',
+        )
         ..writeln('→ Start your response with exactly: ACTION:REPLACE')
-        ..writeln('→ Then on the next line, output the FULL transformed note content.');
+        ..writeln(
+          '→ Then on the next line, output the FULL transformed note content.',
+        );
 
       if (hasExistingContent) {
         prompt
@@ -159,16 +224,27 @@ class GeminiService {
       } else {
         prompt
           ..writeln()
-          ..writeln('(The note is currently empty — so this is almost certainly CASE 1, new content.)');
+          ..writeln(
+            '(The note is currently empty — so this is almost certainly CASE 1 or CASE 1B, new content.)',
+          );
       }
 
       prompt
         ..writeln()
         ..writeln('RULES:')
-        ..writeln('• Your response MUST start with ACTION:APPEND or ACTION:REPLACE on its own line.')
-        ..writeln('• Do NOT include any intro sentences, explanations, or commentary.')
+        ..writeln(
+          '• Your response MUST start with ACTION:NONE, ACTION:APPEND, or ACTION:REPLACE on its own line.',
+        )
+        ..writeln(
+          '• Do NOT include any intro sentences, explanations, or commentary.',
+        )
         ..writeln('• Do NOT echo back the action line in the content itself.')
-        ..writeln('• If the note is empty and the user gives a command like "organize this", just say ACTION:APPEND and note that there is nothing to organize.');
+        ..writeln(
+          '• If you cannot hear any actual speech, you MUST use ACTION:NONE — never fabricate content from the existing note or its heading.',
+        )
+        ..writeln(
+          '• If the note is empty and the user gives a command like "organize this", just say ACTION:APPEND and note that there is nothing to organize.',
+        );
 
       final audioPart = DataPart(mimeType, Uint8List.fromList(audioBytes));
       final content = Content.multi([TextPart(prompt.toString()), audioPart]);
@@ -198,11 +274,15 @@ class GeminiService {
       final hasExistingContent = existingContent.trim().isNotEmpty;
 
       final prompt = StringBuffer()
-        ..writeln('You are a smart AI note-taking assistant inside a personal notes app.')
+        ..writeln(
+          'You are a smart AI note-taking assistant inside a personal notes app.',
+        )
         ..writeln()
         ..writeln('The user just scanned/photographed something. Your job:')
         ..writeln()
-        ..writeln('1. Extract ALL text, tasks, data, numbers, names, and information visible in this image.')
+        ..writeln(
+          '1. Extract ALL text, tasks, data, numbers, names, and information visible in this image.',
+        )
         ..writeln('   Do NOT skip anything. Be thorough.')
         ..writeln()
         ..writeln('2. Decide the best action based on the existing note:');
@@ -218,14 +298,22 @@ class GeminiService {
           ..writeln('→ Start with ACTION:APPEND')
           ..writeln('→ Output the extracted content cleanly formatted.')
           ..writeln()
-          ..writeln('CASE B — The image content OVERLAPS or RELATES to the existing note:')
+          ..writeln(
+            'CASE B — The image content OVERLAPS or RELATES to the existing note:',
+          )
           ..writeln('→ Start with ACTION:REPLACE')
-          ..writeln('→ Output the FULL merged/updated note — combining existing content with new image data.')
-          ..writeln('→ Do not duplicate items that already exist. Merge intelligently.');
+          ..writeln(
+            '→ Output the FULL merged/updated note — combining existing content with new image data.',
+          )
+          ..writeln(
+            '→ Do not duplicate items that already exist. Merge intelligently.',
+          );
       } else {
         prompt
           ..writeln()
-          ..writeln('(The note is currently empty — just extract and format the image content.)')
+          ..writeln(
+            '(The note is currently empty — just extract and format the image content.)',
+          )
           ..writeln('→ Start with ACTION:APPEND')
           ..writeln('→ Output the extracted content cleanly formatted.');
       }
@@ -233,10 +321,16 @@ class GeminiService {
       prompt
         ..writeln()
         ..writeln('FORMATTING RULES:')
-        ..writeln('• Format action items as: [ ] <task> — <date or context if visible>')
+        ..writeln(
+          '• Format action items as: [ ] <task> — <date or context if visible>',
+        )
         ..writeln('• Format general text/data in clear labeled sections.')
-        ..writeln('• Your response MUST start with ACTION:APPEND or ACTION:REPLACE on its own line.')
-        ..writeln('• Do NOT include any intro sentences, explanations, or commentary.')
+        ..writeln(
+          '• Your response MUST start with ACTION:APPEND or ACTION:REPLACE on its own line.',
+        )
+        ..writeln(
+          '• Do NOT include any intro sentences, explanations, or commentary.',
+        )
         ..writeln('• Output ONLY the clean content after the action line.');
 
       final imagePart = DataPart(mimeType, Uint8List.fromList(imageBytes));
@@ -266,13 +360,14 @@ class GeminiService {
     if (plainText.trim().isEmpty) {
       return jsonEncode({
         'ops': [
-          {'insert': '\n'}
-        ]
+          {'insert': '\n'},
+        ],
       });
     }
 
     try {
-      final prompt = '''
+      final prompt =
+          '''
 You are converting plain text into a Quill Delta JSON object for a rich text editor.
 
 The text to format:
@@ -294,9 +389,7 @@ Rules:
 
 Output ONLY the JSON object:''';
 
-      final response = await _generateContentWithFallback(
-        Content.text(prompt),
-      );
+      final response = await _generateContentWithFallback(Content.text(prompt));
 
       final raw = response.text?.trim() ?? '';
       // Strip markdown code fences if model wrapped it
@@ -342,8 +435,8 @@ Output ONLY the JSON object:''';
   //  ❌ gemini-2.0-flash-lite → SHUT DOWN
   //  ❌ gemini-1.5-flash      → DEPRECATED (no -latest suffix)
   static const _fallbackChain = [
-    'gemini-2.5-flash',        // primary  — stable GA, multimodal
-    'gemini-2.5-flash-lite',   // tier 2   — fastest stable 2.5 model
+    'gemini-2.5-flash', // primary  — stable GA, multimodal
+    'gemini-2.5-flash-lite', // tier 2   — fastest stable 2.5 model
     'gemini-1.5-flash-latest', // last resort — -latest alias always resolves
   ];
 
@@ -362,7 +455,9 @@ Output ONLY the JSON object:''';
         s.contains('quota');
   }
 
-  Future<GenerateContentResponse> _generateContentWithFallback(Content content) async {
+  Future<GenerateContentResponse> _generateContentWithFallback(
+    Content content,
+  ) async {
     final customKey = await ApiKeyService.getKey();
     final activeKey = customKey ?? _apiKey;
 
@@ -405,14 +500,18 @@ Output ONLY the JSON object:''';
     final raw = response.text?.trim();
 
     if (raw == null || raw.isEmpty) {
-      throw GeminiServiceException('$errorContext: Gemini returned an empty response.');
+      throw GeminiServiceException(
+        '$errorContext: Gemini returned an empty response.',
+      );
     }
 
     // Parse the ACTION: header
     final lines = raw.split('\n');
     final firstLine = lines.first.trim().toUpperCase();
 
-    if (firstLine == 'ACTION:REPLACE' && hasExistingContent) {
+    if (firstLine == 'ACTION:NONE') {
+      return const AiResult(action: AiAction.none, text: '');
+    } else if (firstLine == 'ACTION:REPLACE' && hasExistingContent) {
       final text = lines.skip(1).join('\n').trim();
       return AiResult(
         action: AiAction.replace,

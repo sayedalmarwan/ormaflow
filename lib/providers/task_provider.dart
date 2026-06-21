@@ -104,7 +104,9 @@ class TaskProvider extends ChangeNotifier {
   Future<void> clearCompleted() async {
     final completed = tasks.where((t) => t.isCompleted).toList();
     for (final t in completed) {
-      await _trashBox.put(t.id, t);
+      // Use copyWith() to create a fresh, unattached HiveObject — putting the
+      // same instance into a different box reverts the deletion (see moveToTrash).
+      await _trashBox.put(t.id, t.copyWith());
       await _tasksBox.delete(t.id);
     }
     notifyListeners();

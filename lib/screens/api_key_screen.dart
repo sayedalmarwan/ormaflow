@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_key_service.dart';
 import '../theme/theme.dart';
 import 'home_screen.dart';
@@ -29,6 +30,17 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
       setState(() {
         _controller.text = key;
       });
+    }
+  }
+
+  Future<void> _openAiStudio() async {
+    final uri = Uri.parse('https://aistudio.google.com/apikey');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the link.')),
+        );
+      }
     }
   }
 
@@ -91,9 +103,7 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
               ),
               const SizedBox(height: 8),
               GestureDetector(
-                onTap: () {
-                  // The user commented: Open Google AI Studio
-                },
+                onTap: _openAiStudio,
                 child: Text(
                   'Get a free key at aistudio.google.com →',
                   style: GoogleFonts.inter(
