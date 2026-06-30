@@ -50,6 +50,27 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _startSearch() {
+    setState(() => _isSearching = true);
+  }
+
+  void _stopSearch() {
+    setState(() {
+      _isSearching = false;
+      _searchQuery = '';
+      _searchController.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +83,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // ── Drawer ────────────────────────────────
       drawer: _buildDrawer(context),
       // ── Body ──────────────────────────────────
-      body: _currentIndex == 0 ? const _HomeBody() : const TrashScreen(),
+      body: _currentIndex == 0
+          ? _HomeBody(searchQuery: _searchQuery)
+          : const TrashScreen(),
       // ── FAB ───────────────────────────────────
       floatingActionButton: _currentIndex == 0 ? _buildFAB(context) : null,
     );
@@ -71,6 +94,38 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── AppBar factory ────────────────────────────
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
+    if (_isSearching) {
+      return AppBar(
+        backgroundColor: AppColors.background,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Symbols.arrow_back, color: AppColors.textPrimary, size: 24),
+          onPressed: _stopSearch,
+          tooltip: 'Back',
+        ),
+        title: TextField(
+          controller: _searchController,
+          autofocus: true,
+          style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 16),
+          cursorColor: AppColors.accent,
+          decoration: InputDecoration(
+            hintText: 'Search notes...',
+            hintStyle: GoogleFonts.inter(color: AppColors.textSecondary),
+            border: InputBorder.none,
+          ),
+          onChanged: (value) => setState(() => _searchQuery = value),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Symbols.close, color: AppColors.textPrimary, size: 24),
+            onPressed: _stopSearch,
+            tooltip: 'Clear',
+          ),
+        ],
+      );
+    }
+
     return AppBar(
       backgroundColor: AppColors.background,
       surfaceTintColor: Colors.transparent,
@@ -94,8 +149,13 @@ class _HomeScreenState extends State<HomeScreen> {
           letterSpacing: 0.2,
         ),
       ),
-      // Right – settings
+      // Right – search, settings
       actions: [
+        IconButton(
+          icon: const Icon(Symbols.search, color: AppColors.textPrimary, size: 24),
+          onPressed: _startSearch,
+          tooltip: 'Search',
+        ),
         IconButton(
           icon: const Icon(
             Symbols.settings,
@@ -214,7 +274,9 @@ class _HomeScreenState extends State<HomeScreen> {
 // ──────────────────────────────────────────────
 
 class _HomeBody extends StatelessWidget {
-  const _HomeBody();
+  const _HomeBody({required this.searchQuery});
+
+  final String searchQuery;
 
   @override
   Widget build(BuildContext context) {
@@ -223,11 +285,13 @@ class _HomeBody extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          SizedBox(height: 8),
-          _HeroCard(),
-          SizedBox(height: 16),
-          _TaskListCard(),
+        children: [
+          const SizedBox(height: 8),
+          if (searchQuery.isEmpty) ...[
+            const _HeroCard(),
+            const SizedBox(height: 16),
+          ],
+          _TaskListCard(searchQuery: searchQuery),
         ],
       ),
     );
@@ -313,11 +377,21 @@ class _PendingBadge extends StatelessWidget {
 // ──────────────────────────────────────────────
 
 class _TaskListCard extends StatelessWidget {
-  const _TaskListCard();
+  const _TaskListCard({required this.searchQuery});
+
+  final String searchQuery;
 
   @override
   Widget build(BuildContext context) {
-    final tasks = context.watch<TaskProvider>().tasks;
+    final allTasks = context.watch<TaskProvider>().tasks;
+    final query = searchQuery.trim().toLowerCase();
+    final tasks = query.isEmpty
+        ? allTasks
+        : allTasks
+            .where((t) =>
+                t.title.toLowerCase().contains(query) ||
+                t.contentJson.toLowerCase().contains(query))
+            .toList();
 
     if (tasks.isEmpty) {
       return Container(
@@ -326,10 +400,12 @@ class _TaskListCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.divider, width: 1),
         ),
-        child: const EmptyState(
-          icon: Symbols.checklist,
-          title: 'No notes yet',
-          message: 'Tap the + button to capture your first note or task.',
+        child: EmptyState(
+          icon: query.isEmpty ? Symbols.checklist : Symbols.search_off,
+          title: query.isEmpty ? 'No notes yet' : 'No matches',
+          message: query.isEmpty
+              ? 'Tap the + button to capture your first note or task.'
+              : 'No notes match "$searchQuery".',
         ),
       );
     }
