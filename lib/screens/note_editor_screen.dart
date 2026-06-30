@@ -20,19 +20,7 @@ import '../services/gemini_service.dart';
 import '../theme/theme.dart';
 import 'api_key_screen.dart';
 
-/// Linearly scales a value between [small] and [large] based on where
-/// [width] falls between [minWidth] and [maxWidth] — no hard breakpoint
-/// cliff, so there's no width at which sizing can be too big to fit.
-double _scaleByWidth(
-  double width, {
-  double minWidth = 320.0,
-  double maxWidth = 420.0,
-  required double small,
-  required double large,
-}) {
-  final t = ((width - minWidth) / (maxWidth - minWidth)).clamp(0.0, 1.0);
-  return small + (large - small) * t;
-}
+const _noHSpacing = HorizontalSpacing(0, 0);
 
 class NoteEditorScreen extends StatefulWidget {
   const NoteEditorScreen({super.key, this.task});
@@ -54,6 +42,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   bool _showFormattingControls = false;
   bool _isAiProcessing = false;
 
+  // ponytail: ValueNotifiers instead of setState so only the 2 AppBar buttons
+  // and the checklist icon rebuild on each keystroke, not the whole screen.
+  late final ValueNotifier<bool> _canUndo;
+  late final ValueNotifier<bool> _canRedo;
+  late final ValueNotifier<Style> _selectionStyle;
+
   @override
   void initState() {
     super.initState();
@@ -62,13 +56,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
     // Initialize QuillController from stored Delta JSON (or empty doc)
     _quillController = _buildQuillController(widget.task?.contentJson ?? '');
+    _canUndo = ValueNotifier(_quillController.hasUndo);
+    _canRedo = ValueNotifier(_quillController.hasRedo);
+    _selectionStyle = ValueNotifier(_quillController.getSelectionStyle());
     _quillController.addListener(_onQuillSelectionChanged);
   }
 
   void _onQuillSelectionChanged() {
-    if (mounted) {
-      setState(() {});
-    }
+    _canUndo.value = _quillController.hasUndo;
+    _canRedo.value = _quillController.hasRedo;
+    _selectionStyle.value = _quillController.getSelectionStyle();
   }
 
   QuillController _buildQuillController(String contentJson) {
@@ -102,6 +99,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     _quillController.dispose();
     _editorFocusNode.dispose();
     _editorScrollController.dispose();
+    _canUndo.dispose();
+    _canRedo.dispose();
+    _selectionStyle.dispose();
     super.dispose();
   }
 
@@ -154,14 +154,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     } else {
       doc.insert(0, text);
     }
-    setState(() {});
   }
 
   void _replacePlainText(String text) {
     if (text.isEmpty) return;
     _quillController.clear();
     _quillController.document.insert(0, text);
-    setState(() {});
   }
 
   /// Called by mic/camera buttons after AI returns a plain text result.
@@ -412,7 +410,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       // Fallback to plain text append
       _appendPlainText(_extractPlainTextFromDelta(deltaJson));
     }
-    setState(() {});
   }
 
   void _replaceWithDelta(String deltaJson) {
@@ -428,7 +425,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     } catch (_) {
       _replacePlainText(_extractPlainTextFromDelta(deltaJson));
     }
-    setState(() {});
   }
 
   static String _extractPlainTextFromDelta(String deltaJson) {
@@ -499,7 +495,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                     fontSize: 16,
                                     height: 1.6,
                                   ),
-                                  const HorizontalSpacing(0, 0),
+                                  _noHSpacing,
                                   const VerticalSpacing(4, 4),
                                   const VerticalSpacing(0, 0),
                                   null,
@@ -511,7 +507,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                     fontWeight: FontWeight.w700,
                                     height: 1.3,
                                   ),
-                                  const HorizontalSpacing(0, 0),
+                                  _noHSpacing,
                                   const VerticalSpacing(8, 4),
                                   const VerticalSpacing(0, 0),
                                   null,
@@ -523,7 +519,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                     fontWeight: FontWeight.w600,
                                     height: 1.3,
                                   ),
-                                  const HorizontalSpacing(0, 0),
+                                  _noHSpacing,
                                   const VerticalSpacing(6, 4),
                                   const VerticalSpacing(0, 0),
                                   null,
@@ -536,7 +532,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                     fontSize: 16,
                                     height: 1.6,
                                   ),
-                                  const HorizontalSpacing(0, 0),
+                                  _noHSpacing,
                                   const VerticalSpacing(4, 4),
                                   const VerticalSpacing(0, 0),
                                   null,
@@ -586,9 +582,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   // ── AppBar ────────────────────────────────────
 
   AppBar _buildAppBar() {
-    final canUndo = _quillController.hasUndo;
-    final canRedo = _quillController.hasRedo;
-
     return AppBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -619,41 +612,37 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         ),
       ),
       actions: [
-        // Undo
-        IconButton(
-          icon: Icon(
-            Symbols.undo,
-            color: canUndo
-                ? AppColors.textPrimary
-                : AppColors.textSecondary.withAlpha(80),
-            size: 22,
+        // Undo — rebuilds only this button, not the screen
+        ValueListenableBuilder<bool>(
+          valueListenable: _canUndo,
+          builder: (_, canUndo, _) => IconButton(
+            icon: Icon(
+              Symbols.undo,
+              color: canUndo
+                  ? AppColors.textPrimary
+                  : AppColors.textSecondary.withAlpha(80),
+              size: 22,
+            ),
+            onPressed: canUndo ? _quillController.undo : null,
+            tooltip: 'Undo',
+            splashRadius: 20,
           ),
-          onPressed: canUndo
-              ? () {
-                  _quillController.undo();
-                  setState(() {});
-                }
-              : null,
-          tooltip: 'Undo',
-          splashRadius: 20,
         ),
-        // Redo
-        IconButton(
-          icon: Icon(
-            Symbols.redo,
-            color: canRedo
-                ? AppColors.textPrimary
-                : AppColors.textSecondary.withAlpha(80),
-            size: 22,
+        // Redo — rebuilds only this button, not the screen
+        ValueListenableBuilder<bool>(
+          valueListenable: _canRedo,
+          builder: (_, canRedo, _) => IconButton(
+            icon: Icon(
+              Symbols.redo,
+              color: canRedo
+                  ? AppColors.textPrimary
+                  : AppColors.textSecondary.withAlpha(80),
+              size: 22,
+            ),
+            onPressed: canRedo ? _quillController.redo : null,
+            tooltip: 'Redo',
+            splashRadius: 20,
           ),
-          onPressed: canRedo
-              ? () {
-                  _quillController.redo();
-                  setState(() {});
-                }
-              : null,
-          tooltip: 'Redo',
-          splashRadius: 20,
         ),
         // Done — dismiss keyboard
         Padding(
@@ -704,7 +693,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   Widget _buildFormattingControlsBar() {
-    final selectionStyle = _quillController.getSelectionStyle();
+    return ValueListenableBuilder<Style>(
+      valueListenable: _selectionStyle,
+      builder: (_, selectionStyle, _) => _formattingBar(selectionStyle),
+    );
+  }
+
+  Widget _formattingBar(Style selectionStyle) {
     final headerAttr = selectionStyle.attributes[Attribute.h1.key];
     final isH1 = headerAttr != null && headerAttr.value == 1;
     final isH2 = headerAttr != null && headerAttr.value == 2;
@@ -716,21 +711,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     Color getTextColor(bool isActive) =>
         isActive ? AppColors.accent : AppColors.textPrimary;
 
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    // Adapt layout parameters to screen width — scaled continuously so
-    // there's no breakpoint cliff where sizing doesn't fit (see #overflow).
-    double scale(double small, double large) =>
-        _scaleByWidth(screenWidth, small: small, large: large);
-
-    final buttonWidth = scale(30.0, 36.0);
-    final buttonHeight = scale(30.0, 36.0);
-    final buttonSpacing = scale(1.0, 2.0);
-    final dividerMargin = scale(4.0, 6.0);
-    final barPaddingHorizontal = scale(6.0, 10.0);
-    final barPaddingVertical = scale(3.0, 4.0);
-    final fontSize = scale(12.0, 14.0);
-    final iconSize = scale(16.0, 18.0);
+    // ponytail: portrait-only phone app, two sizes suffice
+    final narrow = MediaQuery.of(context).size.width < 380;
+    final buttonWidth  = narrow ? 30.0 : 36.0;
+    final buttonHeight = narrow ? 30.0 : 36.0;
+    final buttonSpacing = narrow ? 1.0 : 2.0;
+    final dividerMargin = narrow ? 4.0 : 6.0;
+    final barPaddingHorizontal = narrow ? 6.0 : 10.0;
+    final barPaddingVertical = narrow ? 3.0 : 4.0;
+    final fontSize = narrow ? 12.0 : 14.0;
+    final iconSize = narrow ? 16.0 : 18.0;
 
     return Center(
       child: Container(
@@ -911,33 +901,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   // ── Bottom Accessory Bar ──────────────────────
 
   Widget _buildAccessoryBar() {
-    final selectionStyle = _quillController.getSelectionStyle();
-    final listAttr = selectionStyle.attributes[Attribute.unchecked.key];
-    final isChecklist =
-        listAttr != null &&
-        (listAttr.value == 'checked' || listAttr.value == 'unchecked');
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    // Scaled continuously by width — no breakpoint cliff where sizing
-    // can land too big to fit (see #overflow).
-    double scale(double small, double large) =>
-        _scaleByWidth(screenWidth, small: small, large: large);
-
-    final outerPaddingH = scale(8.0, 20.0);
-    final outerPaddingBottom = scale(10.0, 20.0);
-
-    // Pill inner padding
-    final pillPaddingH = scale(8.0, 16.0);
-    final pillPaddingV = scale(4.0, 8.0);
-
-    // Spacing between pill icons
-    final innerIconSpacing = scale(8.0, 20.0);
-
-    // Spacing between right-side buttons
-    final rightButtonsSpacing = scale(6.0, 12.0);
-
-    // Icon sizes
-    final pillIconSize = scale(20.0, 24.0);
+    final narrow = MediaQuery.of(context).size.width < 380;
+    final outerPaddingH = narrow ? 8.0 : 20.0;
+    final outerPaddingBottom = narrow ? 10.0 : 20.0;
+    final pillPaddingH = narrow ? 8.0 : 16.0;
+    final pillPaddingV = narrow ? 4.0 : 8.0;
+    final innerIconSpacing = narrow ? 8.0 : 20.0;
+    final rightButtonsSpacing = narrow ? 6.0 : 12.0;
+    final pillIconSize = narrow ? 20.0 : 24.0;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -975,26 +946,38 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                   splashRadius: 20,
                 ),
                 SizedBox(width: innerIconSpacing),
-                IconButton(
-                  icon: Icon(
-                    isChecklist
-                        ? Symbols.check_box
-                        : Symbols.check_box_outline_blank,
-                    color: isChecklist
-                        ? AppColors.accent
-                        : AppColors.textPrimary,
-                    size: pillIconSize,
-                  ),
-                  onPressed: () {
-                    _quillController.formatSelection(
-                      isChecklist
-                          ? Attribute.clone(Attribute.unchecked, null)
-                          : Attribute.unchecked,
+                // Rebuilds only this button on selection change, not the screen
+                ValueListenableBuilder<Style>(
+                  valueListenable: _selectionStyle,
+                  builder: (_, style, _) {
+                    final listAttr =
+                        style.attributes[Attribute.unchecked.key];
+                    final isChecklist =
+                        listAttr != null &&
+                        (listAttr.value == 'checked' ||
+                            listAttr.value == 'unchecked');
+                    return IconButton(
+                      icon: Icon(
+                        isChecklist
+                            ? Symbols.check_box
+                            : Symbols.check_box_outline_blank,
+                        color: isChecklist
+                            ? AppColors.accent
+                            : AppColors.textPrimary,
+                        size: pillIconSize,
+                      ),
+                      onPressed: () {
+                        _quillController.formatSelection(
+                          isChecklist
+                              ? Attribute.clone(Attribute.unchecked, null)
+                              : Attribute.unchecked,
+                        );
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      splashRadius: 20,
                     );
                   },
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  splashRadius: 20,
                 ),
                 SizedBox(width: innerIconSpacing),
                 IconButton(
@@ -1005,7 +988,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                           ? AppColors.accent
                           : AppColors.textPrimary,
                       fontWeight: FontWeight.w700,
-                      fontSize: scale(14.0, 16.0),
+                      fontSize: narrow ? 14.0 : 16.0,
                     ),
                   ),
                   onPressed: () {
@@ -1158,9 +1141,9 @@ class _MicButtonState extends State<_MicButton> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final paddingVal = _scaleByWidth(screenWidth, small: 10.0, large: 12.0);
-    final iconSize = _scaleByWidth(screenWidth, small: 20.0, large: 24.0);
+    final narrow = MediaQuery.of(context).size.width < 380;
+    final paddingVal = narrow ? 10.0 : 12.0;
+    final iconSize = narrow ? 20.0 : 24.0;
 
     return GestureDetector(
       onTap: () {
@@ -1328,9 +1311,9 @@ class _ScanButtonState extends State<_ScanButton> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final paddingVal = _scaleByWidth(screenWidth, small: 10.0, large: 12.0);
-    final iconSize = _scaleByWidth(screenWidth, small: 20.0, large: 24.0);
+    final narrow = MediaQuery.of(context).size.width < 380;
+    final paddingVal = narrow ? 10.0 : 12.0;
+    final iconSize = narrow ? 20.0 : 24.0;
 
     return InkWell(
       onTap: _isProcessing ? null : _showSourcePicker,
@@ -1773,7 +1756,7 @@ class _DrawingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(_DrawingPainter old) => old.points != points;
 }
 
 // ──────────────────────────────────────────────

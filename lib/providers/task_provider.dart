@@ -11,8 +11,8 @@ import '../models/task.dart';
 // ──────────────────────────────────────────────
 
 class TaskProvider extends ChangeNotifier {
-  static const String _tasksBoxName = 'tasks';
-  static const String _trashBoxName = 'trash';
+  static const String tasksBoxName = 'tasks';
+  static const String trashBoxName = 'trash';
 
   late Box<Task> _tasksBox;
   late Box<Task> _trashBox;
@@ -148,7 +148,4 @@ class TaskProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Hive box names (public for main.dart) ──────
-  static String get tasksBoxName => _tasksBoxName;
-  static String get trashBoxName => _trashBoxName;
 }
