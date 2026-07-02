@@ -32,7 +32,6 @@ class NoteEditorScreen extends StatefulWidget {
 }
 
 class _NoteEditorScreenState extends State<NoteEditorScreen> {
-  late TextEditingController _titleController;
   late QuillController _quillController;
   late TaskProvider _taskProvider;
   final GeminiService _geminiService = GeminiService();
@@ -52,10 +51,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   void initState() {
     super.initState();
     _taskProvider = context.read<TaskProvider>();
-    _titleController = TextEditingController(text: widget.task?.title ?? '');
-
-    // Initialize QuillController from stored Delta JSON (or empty doc)
-    _quillController = _buildQuillController(widget.task?.contentJson ?? '');
+    _quillController = _buildQuillController(widget.task?.title, widget.task?.contentJson ?? '');
     _canUndo = ValueNotifier(_quillController.hasUndo);
     _canRedo = ValueNotifier(_quillController.hasRedo);
     _selectionStyle = ValueNotifier(_quillController.getSelectionStyle());
@@ -68,34 +64,76 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     _selectionStyle.value = _quillController.getSelectionStyle();
   }
 
-  QuillController _buildQuillController(String contentJson) {
-    if (contentJson.isEmpty) {
-      return QuillController.basic();
-    }
-    try {
-      final delta = Delta.fromJson(jsonDecode(contentJson)['ops'] as List);
-      return QuillController(
-        document: Document.fromDelta(delta),
-        selection: const TextSelection.collapsed(offset: 0),
-      );
-    } catch (_) {
-      // If stored content isn't valid Delta JSON, treat it as plain text
-      if (contentJson.isNotEmpty) {
-        final doc = Document()..insert(0, contentJson);
+  QuillController _buildQuillController(String? title, String contentJson) {
+    if (contentJson.isNotEmpty) {
+      try {
+        final ops = jsonDecode(contentJson)['ops'] as List;
+        final delta = Delta.fromJson(ops);
+        final doc = Document.fromDelta(delta);
+
+        if (title != null && title.isNotEmpty) {
+          final firstLine = doc.toPlainText().split('\n').first.trim();
+          if (firstLine != title.trim()) {
+            // Old format: title stored separately — prepend it as H1
+            final full = Delta.fromJson([
+              {'insert': title},
+              {'insert': '\n', 'attributes': {'header': 1}},
+              ...ops,
+            ]);
+            return QuillController(
+              document: Document.fromDelta(full),
+              selection: const TextSelection.collapsed(offset: 0),
+            );
+          }
+        }
+
         return QuillController(
           document: doc,
           selection: const TextSelection.collapsed(offset: 0),
         );
+      } catch (_) {
+        // Fallback: plain-text body with title prepended
+        final ops = <Map<String, dynamic>>[];
+        if (title != null && title.isNotEmpty) {
+          ops.addAll([
+            {'insert': title},
+            {'insert': '\n', 'attributes': {'header': 1}},
+          ]);
+        }
+        ops.add({'insert': '$contentJson\n'});
+        return QuillController(
+          document: Document.fromDelta(Delta.fromJson(ops)),
+          selection: const TextSelection.collapsed(offset: 0),
+        );
       }
-      return QuillController.basic();
     }
+
+    // No body — title only, or brand-new note
+    if (title != null && title.isNotEmpty && title != 'Untitled Note') {
+      return QuillController(
+        document: Document.fromDelta(Delta.fromJson([
+          {'insert': title},
+          {'insert': '\n', 'attributes': {'header': 1}},
+        ])),
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    // New note: start with an empty H1 line so title typing is styled right
+    return QuillController(
+      document: Document.fromDelta(
+        Delta.fromJson([
+          {'insert': '\n', 'attributes': {'header': 1}},
+        ]),
+      ),
+      selection: const TextSelection.collapsed(offset: 0),
+    );
   }
 
   @override
   void dispose() {
     _quillController.removeListener(_onQuillSelectionChanged);
     _performSave();
-    _titleController.dispose();
     _quillController.dispose();
     _editorFocusNode.dispose();
     _editorScrollController.dispose();
@@ -106,12 +144,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   void _performSave() {
-    final title = _titleController.text.trim();
+    final plain = _quillController.document.toPlainText();
+    final nl = plain.indexOf('\n');
+    final title = (nl >= 0 ? plain.substring(0, nl) : plain).trim();
+    final body = (nl >= 0 ? plain.substring(nl + 1) : '').trim();
+
+    if (title.isEmpty && body.isEmpty && widget.task == null) return;
+
     final deltaJson = _getDeltaJson();
-    final plainText = _quillController.document.toPlainText().trim();
-
-    if (title.isEmpty && plainText.isEmpty && widget.task == null) return;
-
     final finalTitle = title.isEmpty ? 'Untitled Note' : title;
 
     if (widget.task == null) {
@@ -455,38 +495,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                       horizontal: 24.0,
                       vertical: 8.0,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ── Title field ──────────────────────
-                        TextField(
-                          controller: _titleController,
-                          style: GoogleFonts.inter(
-                            color: AppColors.textPrimary,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Note title',
-                            hintStyle: GoogleFonts.inter(
-                              color: AppColors.textSecondary.withAlpha(120),
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            border: InputBorder.none,
-                            filled: false,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // ── Quill Editor ─────────────────────
-                        Expanded(
-                          child: QuillEditor(
+                    child: QuillEditor(
                             controller: _quillController,
                             focusNode: _editorFocusNode,
                             scrollController: _editorScrollController,
                             config: QuillEditorConfig(
-                              placeholder: 'Start typing your note...',
+                              placeholder: 'Title...',
                               padding: EdgeInsets.zero,
                               customStyles: DefaultStyles(
                                 paragraph: DefaultTextBlockStyle(
@@ -503,7 +517,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                 h1: DefaultTextBlockStyle(
                                   GoogleFonts.inter(
                                     color: AppColors.textPrimary,
-                                    fontSize: 26,
+                                    fontSize: 24,
                                     fontWeight: FontWeight.w700,
                                     height: 1.3,
                                   ),
@@ -526,11 +540,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                 ),
                                 placeHolder: DefaultTextBlockStyle(
                                   GoogleFonts.inter(
-                                    color: AppColors.textSecondary.withAlpha(
-                                      120,
-                                    ),
-                                    fontSize: 16,
-                                    height: 1.6,
+                                    color: AppColors.textSecondary.withAlpha(120),
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.3,
                                   ),
                                   _noHSpacing,
                                   const VerticalSpacing(4, 4),
@@ -540,9 +553,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
                 // Togglable Formatting Controls Bar
